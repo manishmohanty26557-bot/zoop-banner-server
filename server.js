@@ -11,7 +11,15 @@ app.use(cors());
 app.use(express.json());
 
 // ── Health check ──────────────────────────────────────────────────
-app.get('/', (req, res) => res.json({ status: 'ok', service: 'Zoop Banner Server' }));
+app.get('/', (req, res) => res.json({ 
+  status: 'ok', 
+  service: 'Zoop Banner Server',
+  env_check: {
+    photoroom: process.env.PHOTOROOM_API_KEY ? 'SET (' + process.env.PHOTOROOM_API_KEY.substring(0,10) + '...)' : 'NOT SET',
+    facepp_key: process.env.FACEPP_API_KEY ? 'SET' : 'NOT SET',
+    facepp_secret: process.env.FACEPP_API_SECRET ? 'SET' : 'NOT SET'
+  }
+}));
 
 // ── Face detection (Face++) ───────────────────────────────────────
 app.post('/detect-face', upload.single('image'), async (req, res) => {
