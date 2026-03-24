@@ -23,46 +23,69 @@ app.get('/health', (req, res) => res.json({
   service: 'Zoop Banner Server',
   env_check: {
     removebg: process.env.REMOVEBG_API_KEY ? 'SET (' + process.env.REMOVEBG_API_KEY.substring(0,8) + '...)' : 'NOT SET',
-    facepp_key: process.env.FACEPP_API_KEY ? 'SET' : 'NOT SET',
-    facepp_secret: process.env.FACEPP_API_SECRET ? 'SET' : 'NOT SET'
+    luxand: process.env.LUXAND_TOKEN ? 'SET (env)' : 'Using default token'
   }
 }));
 
 
 
-// ── Face detection (Face++) ───────────────────────────────────────
+// ── Face detection (Luxand) ──────────────────────────────────────
 app.post('/detect-face', upload.single('image'), async (req, res) => {
   try {
-    const facepp_key    = process.env.FACEPP_API_KEY    || req.body.facepp_key;
-    const facepp_secret = process.env.FACEPP_API_SECRET || req.body.facepp_secret;
-
-    if (!facepp_key || !facepp_secret) return res.status(400).json({ error: 'Missing Face++ credentials — set FACEPP_API_KEY and FACEPP_API_SECRET in Render environment variables' });
+    const luxand_token = process.env.LUXAND_TOKEN || '29d1d436ace7471f840540c0bba1cccc';
     if (!req.file) return res.status(400).json({ error: 'No image provided' });
 
-    console.log('Detecting face, image size:', req.file.size);
+    console.log('Detecting face with Luxand, image size:', req.file.size);
 
     const form = new FormData();
-    form.append('api_key',           facepp_key);
-    form.append('api_secret',        facepp_secret);
-    form.append('image_file',        req.file.buffer, {
+    form.append('photo', req.file.buffer, {
       filename:    'photo.jpg',
       contentType: req.file.mimetype
     });
-    form.append('return_attributes', 'none');
 
-    const response = await fetch('https://api-us.faceplusplus.com/facepp/v3/detect', {
-      method: 'POST',
-      body:   form
+    const response = await fetch('https://api.luxand.cloud/photo/detect', {
+      method:  'POST',
+      headers: {
+        'token': luxand_token,
+        ...form.getHeaders()
+      },
+      body: form
     });
 
     const text = await response.text();
-    console.log('Face++ response:', text.substring(0, 200));
+    console.log('Luxand response:', text.substring(0, 300));
 
     try {
       const data = JSON.parse(text);
-      return res.json(data);
+
+      // Luxand returns faces array directly
+      // Convert to Face++ compatible format for frontend
+      if (Array.isArray(data) && data.length > 0) {
+        const face = data[0];
+        const x1 = face.x1 || face.rectangle?.left   || 0;
+        const y1 = face.y1 || face.rectangle?.top    || 0;
+        const x2 = face.x2 || (x1 + (face.rectangle?.width  || 100));
+        const y2 = face.y2 || (y1 + (face.rectangle?.height || 100));
+        const w  = x2 - x1;
+        const h  = y2 - y1;
+
+        console.log('Face found at:', x1, y1, w, h);
+
+        return res.json({
+          faces: [{
+            face_rectangle: { left: x1, top: y1, width: w, height: h }
+          }]
+        });
+      } else if (data.faces) {
+        // Already in Face++ format
+        return res.json(data);
+      } else {
+        console.log('No face detected by Luxand');
+        return res.json({ faces: [] });
+      }
+
     } catch(e) {
-      return res.status(500).json({ error: 'Invalid Face++ response', raw: text.substring(0,200) });
+      return res.status(500).json({ error: 'Invalid Luxand response', raw: text.substring(0,200) });
     }
 
   } catch (err) {
@@ -216,6 +239,35 @@ app.get('/test-facepp', async (req, res) => {
       keys_set:     { key: !!facepp_key, secret: !!facepp_secret }
     });
 
+  } catch(e) {
+    res.json({ success: false, error: e.message });
+  }
+});
+
+// ── Test Luxand ───────────────────────────────────────────────────
+app.get('/test-luxand', async (req, res) => {
+  try {
+    const token = process.env.LUXAND_TOKEN || '29d1d436ace7471f840540c0bba1cccc';
+    const testRes = await fetch('https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=400');
+    const testBuf = await testRes.buffer();
+
+    const form = new FormData();
+    form.append('photo', testBuf, { filename: 'test.jpg', contentType: 'image/jpeg' });
+
+    const response = await fetch('https://api.luxand.cloud/photo/detect', {
+      method:  'POST',
+      headers: { 'token': token, ...form.getHeaders() },
+      body:    form
+    });
+
+    const text = await response.text();
+    const data = JSON.parse(text);
+
+    if (Array.isArray(data) && data.length > 0) {
+      res.json({ success: true, message: 'Luxand is working!', faces_found: data.length, first_face: data[0] });
+    } else {
+      res.json({ success: false, response: data });
+    }
   } catch(e) {
     res.json({ success: false, error: e.message });
   }
