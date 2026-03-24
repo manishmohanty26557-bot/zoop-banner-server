@@ -15,11 +15,13 @@ app.get('/', (req, res) => res.json({
   status: 'ok', 
   service: 'Zoop Banner Server',
   env_check: {
-    photoroom: process.env.PHOTOROOM_API_KEY ? 'SET (' + process.env.PHOTOROOM_API_KEY.substring(0,10) + '...)' : 'NOT SET',
+    removebg: process.env.REMOVEBG_API_KEY ? 'SET (' + process.env.REMOVEBG_API_KEY.substring(0,8) + '...)' : 'NOT SET',
     facepp_key: process.env.FACEPP_API_KEY ? 'SET' : 'NOT SET',
     facepp_secret: process.env.FACEPP_API_SECRET ? 'SET' : 'NOT SET'
   }
 }));
+
+
 
 // ── Face detection (Face++) ───────────────────────────────────────
 app.post('/detect-face', upload.single('image'), async (req, res) => {
@@ -62,46 +64,44 @@ app.post('/detect-face', upload.single('image'), async (req, res) => {
   }
 });
 
-// ── Background removal (PhotoRoom) ───────────────────────────────
+// ── Background removal (remove.bg) ───────────────────────────────
 app.post('/remove-bg', upload.single('image'), async (req, res) => {
   try {
-    const photoroom_key = process.env.PHOTOROOM_API_KEY || req.body.photoroom_key;
+    const removebg_key = process.env.REMOVEBG_API_KEY;
 
-    if (!photoroom_key) return res.status(400).json({ error: 'Missing PhotoRoom API key — set PHOTOROOM_API_KEY in Render environment variables' });
-    if (!req.file)      return res.status(400).json({ error: 'No image provided' });
+    if (!removebg_key) return res.status(400).json({ error: 'REMOVEBG_API_KEY not set in environment variables' });
+    if (!req.file)     return res.status(400).json({ error: 'No image provided' });
 
-    console.log('Removing background, image size:', req.file.size);
-    console.log('PhotoRoom key starts with:', photoroom_key.substring(0, 15));
+    console.log('Removing background with remove.bg, image size:', req.file.size);
 
     const form = new FormData();
-    form.append('imageFile', req.file.buffer, {
+    form.append('image_file', req.file.buffer, {
       filename:    'photo.jpg',
       contentType: req.file.mimetype
     });
-    form.append('removeBackground', 'true');
-    form.append('padding',          '0.1');
+    form.append('size', 'auto');
 
-    const response = await fetch('https://image-api.photoroom.com/v2/edit', {
+    const response = await fetch('https://api.remove.bg/v1.0/removebg', {
       method:  'POST',
       headers: {
-        'x-api-key':  photoroom_key,
-        'Accept':     'image/png, application/json',
+        'X-Api-Key': removebg_key,
         ...form.getHeaders()
       },
       body: form
     });
 
-    console.log('PhotoRoom status:', response.status);
-    console.log('PhotoRoom content-type:', response.headers.get('content-type'));
+    console.log('remove.bg status:', response.status);
+    const contentType = response.headers.get('content-type');
+    console.log('remove.bg content-type:', contentType);
 
-    if (response.ok) {
+    if (response.ok && contentType && contentType.includes('image')) {
       const buffer = await response.buffer();
       res.set('Content-Type', 'image/png');
       res.set('Content-Length', buffer.length);
       return res.send(buffer);
     } else {
       const errText = await response.text();
-      console.error('PhotoRoom error:', errText);
+      console.error('remove.bg error:', errText);
       return res.status(response.status).json({ error: errText });
     }
 
@@ -138,6 +138,38 @@ app.post('/upload-image', upload.single('image'), async (req, res) => {
   } catch (err) {
     console.error('Upload error:', err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Test remove.bg ───────────────────────────────────────────────
+app.get('/test-removebg', async (req, res) => {
+  try {
+    const key = process.env.REMOVEBG_API_KEY;
+    if (!key) return res.json({ success: false, error: 'REMOVEBG_API_KEY not set' });
+
+    const testRes = await fetch('https://upload.wikimedia.org/wikipedia/commons/thumb/a/a7/Camponotus_flavomarginatus_ant.jpg/320px-Camponotus_flavomarginatus_ant.jpg');
+    const testBuf = await testRes.buffer();
+
+    const form = new FormData();
+    form.append('image_file', testBuf, { filename: 'test.jpg', contentType: 'image/jpeg' });
+    form.append('size', 'preview');
+
+    const response = await fetch('https://api.remove.bg/v1.0/removebg', {
+      method: 'POST',
+      headers: { 'X-Api-Key': key, ...form.getHeaders() },
+      body: form
+    });
+
+    const contentType = response.headers.get('content-type');
+    if (response.ok && contentType && contentType.includes('image')) {
+      const buf = await response.buffer();
+      res.json({ success: true, message: 'remove.bg is working!', size_bytes: buf.length });
+    } else {
+      const err = await response.text();
+      res.json({ success: false, status: response.status, error: err });
+    }
+  } catch(e) {
+    res.json({ success: false, error: e.message });
   }
 });
 
