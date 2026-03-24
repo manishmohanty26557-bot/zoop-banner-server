@@ -131,7 +131,7 @@ input:focus{border-color:var(--maroon);}
         <img id="photoPreview" class="prev" style="display:none;"/>
         <div class="up-icon" id="photoIcon"><svg width="22" height="22" fill="none" stroke="#6B1A2A" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg></div>
         <div class="up-label" id="photoLabel">Click to upload seller photo</div>
-        <div class="up-sub">JPG or PNG — face detected &amp; background auto-removed</div>
+        <div class="up-sub">JPG or PNG — Luxand detects face, remove.bg removes background</div>
         <div class="up-name" id="photoName"></div>
       </div>
     </div>
@@ -198,7 +198,7 @@ input:focus{border-color:var(--maroon);}
   <!-- Progress -->
   <div class="progress-steps" id="progressSteps">
     <div class="ps-title">Generating your banner...</div>
-    <div class="ps-item"><div class="ps-dot pending" id="dot-photo"><span>1</span></div><div class="ps-label muted" id="lbl-photo">Detect face, remove background &amp; upload</div><div class="ps-detail" id="det-photo"></div></div>
+    <div class="ps-item"><div class="ps-dot pending" id="dot-photo"><span>1</span></div><div class="ps-label muted" id="lbl-photo">Detect &amp; crop face, remove background &amp; upload</div><div class="ps-detail" id="det-photo"></div></div>
     <div class="ps-item"><div class="ps-dot pending" id="dot-qr"><span>2</span></div><div class="ps-label muted" id="lbl-qr">Generate &amp; upload QR code</div><div class="ps-detail" id="det-qr"></div></div>
     <div class="ps-item"><div class="ps-dot pending" id="dot-render"><span>3</span></div><div class="ps-label muted" id="lbl-render">Render banner via Templated</div><div class="ps-detail" id="det-render"></div></div>
     <div class="ps-item"><div class="ps-dot pending" id="dot-done"><span>4</span></div><div class="ps-label muted" id="lbl-done">Banner ready to download</div><div class="ps-detail" id="det-done"></div></div>
@@ -224,8 +224,7 @@ const TEMPLATED_API_KEY = '955634a0-e530-4061-b9e7-b591a67f62f0';
 const TEMPLATE_ID       = '455fcc10-4af5-4cc4-bd07-9dc81669cfbf';
 const IMGBB_API_KEY     = 'f79251f8e0e4eb709ca8daab2372f28b';
 const PHOTOROOM_API_KEY = 'sk_pr_default_515303fa5690949ce216adaef9f79b2f68c18876';
-const FACEPP_API_KEY    = 'vwYJW4Y5Ztf1y9tw17zm9Rq08J5uMtHO';
-const FACEPP_API_SECRET = 'bOL6tRuaaBEpl7e19U7BbWAjt-JuGezG';
+// Face detection now uses Luxand via server
 
 // Load saved API keys on startup
 window.addEventListener('load', loadAPIKeys);
@@ -396,10 +395,12 @@ async function detectAndCropFace(file) {
         // Crop: tight zoom on face + upper body
         // Width: 2.5x face width centered on face
         // Height: start 0.8x face height ABOVE face top, end 5x face height BELOW face bottom
-        const cropW = Math.min(imgW, Math.max(sFaceW * 2.5, imgW * 0.45));
+        const cropW = Math.min(imgW, Math.max(sFaceW * 2.5, imgW * 0.6));
         const cropX = Math.max(0, Math.round(sFaceCX - cropW / 2));
-        const cropY = Math.max(0, Math.round(sFaceY - sFaceH * 0.8));
-        const cropH = Math.min(imgH - cropY, Math.round(sFaceH * 7));
+        // Start 3x face height ABOVE face top so head is never cut off
+        const cropY = Math.max(0, Math.round(sFaceY - sFaceH * 3.0));
+        // Go 10x face height down to show full body
+        const cropH = Math.min(imgH - cropY, Math.round(sFaceH * 10));
         const finalCropW = Math.min(imgW - cropX, Math.round(cropW));
 
         console.log('Image natural size:', imgW, 'x', imgH);
