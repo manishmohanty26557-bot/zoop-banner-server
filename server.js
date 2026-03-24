@@ -74,17 +74,18 @@ app.post('/remove-bg', upload.single('image'), async (req, res) => {
     console.log('PhotoRoom key starts with:', photoroom_key.substring(0, 15));
 
     const form = new FormData();
-    form.append('image_file', req.file.buffer, {
+    form.append('imageFile', req.file.buffer, {
       filename:    'photo.jpg',
       contentType: req.file.mimetype
     });
-    form.append('output_type', 'cutout');
-    form.append('channels',    'rgba');
+    form.append('removeBackground', 'true');
+    form.append('padding',          '0.1');
 
     const response = await fetch('https://image-api.photoroom.com/v2/edit', {
       method:  'POST',
       headers: {
-        'x-api-key': photoroom_key,
+        'x-api-key':  photoroom_key,
+        'Accept':     'image/png, application/json',
         ...form.getHeaders()
       },
       body: form
