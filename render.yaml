@@ -1,7 +1,0 @@
-services:
-  - type: web
-    name: zoop-banner-server
-    env: node
-    buildCommand: npm install
-    startCommand: node server.js
-    plan: free
