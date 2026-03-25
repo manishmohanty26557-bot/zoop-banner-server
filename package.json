@@ -1,0 +1,18 @@
+{
+  "name": "zoop-banner-server",
+  "version": "2.0.0",
+  "description": "Zoop seller banner generator with Canvas rendering",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "canvas": "^2.11.2",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "form-data": "^4.0.0",
+    "jimp": "^0.22.12",
+    "multer": "^1.4.5-lts.1",
+    "node-fetch": "^2.7.0"
+  }
+}
