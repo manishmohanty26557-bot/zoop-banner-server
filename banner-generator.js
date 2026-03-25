@@ -1,389 +1,431 @@
-const { createCanvas, loadImage, registerFont } = require('canvas');
-const fetch    = require('node-fetch');
-const FormData = require('form-data');
+const { createCanvas, loadImage } = require('canvas');
+const fetch = require('node-fetch');
 
-// ── Banner dimensions (exact) ─────────────────────────────────────
+// ── Exact dimensions ──────────────────────────────────────────────
 const W = 1548;
 const H = 423;
 
-// ── Floral arrangements — different per seller ────────────────────
+// ── Floral variants — subtle differences per seller ───────────────
 const FLORAL_VARIANTS = [
-  // Variant A — roses top-left heavy
-  { topLeft: { x: -20, y: -20, scale: 1.1 }, topRight: { x: W-180, y: -30, scale: 0.85 },
-    bottomLeft: { x: -30, y: H-170, scale: 1.0 }, bottomRight: { x: W-160, y: H-160, scale: 0.9 },
-    topCenter: { x: W/2-80, y: -40, scale: 0.7 }, accent: '#6B1A2A' },
-  // Variant B — balanced corners
-  { topLeft: { x: -10, y: -10, scale: 0.9 }, topRight: { x: W-170, y: -20, scale: 1.0 },
-    bottomLeft: { x: -20, y: H-160, scale: 0.85 }, bottomRight: { x: W-180, y: H-170, scale: 1.1 },
-    topCenter: { x: W/2-70, y: -35, scale: 0.75 }, accent: '#7B2238' },
-  // Variant C — right side heavy
-  { topLeft: { x: -30, y: -15, scale: 0.8 }, topRight: { x: W-190, y: -25, scale: 1.15 },
-    bottomLeft: { x: -15, y: H-155, scale: 0.9 }, bottomRight: { x: W-175, y: H-180, scale: 1.0 },
-    topCenter: { x: W/2-90, y: -30, scale: 0.8 }, accent: '#5A1525' },
-  // Variant D — top center heavy
-  { topLeft: { x: -25, y: -25, scale: 1.0 }, topRight: { x: W-175, y: -15, scale: 0.9 },
-    bottomLeft: { x: -10, y: H-165, scale: 1.0 }, bottomRight: { x: W-165, y: H-175, scale: 0.95 },
-    topCenter: { x: W/2-100, y: -50, scale: 0.95 }, accent: '#6B1A2A' },
+  { tlScale: 1.0,  trScale: 0.85, blScale: 0.9,  brScale: 1.0,  tcScale: 0.75 },
+  { tlScale: 0.9,  trScale: 1.0,  blScale: 1.0,  brScale: 0.9,  tcScale: 0.8  },
+  { tlScale: 1.1,  trScale: 0.9,  blScale: 0.85, brScale: 1.05, tcScale: 0.7  },
+  { tlScale: 0.85, trScale: 1.05, blScale: 1.0,  brScale: 0.9,  tcScale: 0.85 },
 ];
 
-// ── Pick variant based on seller name hash ─────────────────────────
-function pickVariant(sellerName) {
-  let hash = 0;
-  for (let i = 0; i < sellerName.length; i++) hash += sellerName.charCodeAt(i);
-  return FLORAL_VARIANTS[hash % FLORAL_VARIANTS.length];
+function pickVariant(name) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h + name.charCodeAt(i)) % FLORAL_VARIANTS.length;
+  return FLORAL_VARIANTS[h];
 }
 
-// ── Draw rounded rectangle ────────────────────────────────────────
-function roundRect(ctx, x, y, w, h, r) {
+// ── Rounded rect ──────────────────────────────────────────────────
+function rr(ctx, x, y, w, h, r) {
   ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.moveTo(x+r, y);
+  ctx.lineTo(x+w-r, y); ctx.quadraticCurveTo(x+w, y, x+w, y+r);
+  ctx.lineTo(x+w, y+h-r); ctx.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+  ctx.lineTo(x+r, y+h); ctx.quadraticCurveTo(x, y+h, x, y+h-r);
+  ctx.lineTo(x, y+r); ctx.quadraticCurveTo(x, y, x+r, y);
   ctx.closePath();
 }
 
-// ── Draw a stylized rose ──────────────────────────────────────────
-function drawRose(ctx, cx, cy, size, alpha = 1.0) {
+// ── Draw a proper rose ────────────────────────────────────────────
+function drawRose(ctx, cx, cy, r, alpha) {
   ctx.save();
-  ctx.globalAlpha = alpha;
+  ctx.globalAlpha = (alpha || 1) * 0.9;
   ctx.translate(cx, cy);
 
-  // Outer petals
-  const petalColors = ['#e8869a','#d4607a','#f0a0b0','#c85070','#e87090','#d06080'];
+  // Outer petals — 8 petals
+  const outerColors = ['#E8789A','#D45878','#F0A0B8','#C84868','#E06888','#D05870','#E88098','#CC5070'];
   for (let i = 0; i < 8; i++) {
-    const angle = (i / 8) * Math.PI * 2;
+    const a = (i/8)*Math.PI*2;
     ctx.save();
-    ctx.rotate(angle);
-    ctx.fillStyle = petalColors[i % petalColors.length];
+    ctx.rotate(a);
+    ctx.fillStyle = outerColors[i];
     ctx.beginPath();
-    ctx.ellipse(size * 0.42, 0, size * 0.38, size * 0.2, 0, 0, Math.PI * 2);
+    ctx.ellipse(r*0.45, 0, r*0.42, r*0.22, 0, 0, Math.PI*2);
     ctx.fill();
     ctx.restore();
   }
-
+  // Mid petals
+  for (let i = 0; i < 6; i++) {
+    const a = (i/6)*Math.PI*2 + 0.3;
+    ctx.save();
+    ctx.rotate(a);
+    ctx.fillStyle = '#C84070';
+    ctx.beginPath();
+    ctx.ellipse(r*0.28, 0, r*0.28, r*0.15, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
   // Inner petals
   for (let i = 0; i < 5; i++) {
-    const angle = (i / 5) * Math.PI * 2;
+    const a = (i/5)*Math.PI*2;
     ctx.save();
-    ctx.rotate(angle);
-    ctx.fillStyle = '#c03060';
+    ctx.rotate(a);
+    ctx.fillStyle = '#A83060';
     ctx.beginPath();
-    ctx.ellipse(size * 0.2, 0, size * 0.22, size * 0.12, 0, 0, Math.PI * 2);
+    ctx.ellipse(r*0.14, 0, r*0.18, r*0.1, 0, 0, Math.PI*2);
     ctx.fill();
     ctx.restore();
   }
-
   // Center
-  ctx.fillStyle = '#901840';
+  ctx.fillStyle = '#882050';
   ctx.beginPath();
-  ctx.arc(0, 0, size * 0.1, 0, Math.PI * 2);
+  ctx.arc(0, 0, r*0.1, 0, Math.PI*2);
   ctx.fill();
 
   // Leaves
-  const leafColors = ['#5a8a40','#4a7a30','#6a9a50'];
-  for (let i = 0; i < 3; i++) {
-    const angle = (i / 3) * Math.PI * 2 + 0.8;
+  const leafAngles = [0.6, 2.2, 4.0];
+  for (const la of leafAngles) {
     ctx.save();
-    ctx.rotate(angle);
-    ctx.fillStyle = leafColors[i % leafColors.length];
-    ctx.globalAlpha = alpha * 0.85;
+    ctx.rotate(la);
+    ctx.fillStyle = '#4A7A30';
+    ctx.globalAlpha = (alpha||1)*0.75;
     ctx.beginPath();
-    ctx.ellipse(size * 0.65, 0, size * 0.3, size * 0.12, 0, 0, Math.PI * 2);
+    ctx.ellipse(r*0.75, 0, r*0.35, r*0.14, 0, 0, Math.PI*2);
     ctx.fill();
+    // Leaf vein
+    ctx.strokeStyle = '#3A6020';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(r*0.42, 0);
+    ctx.lineTo(r*1.05, 0);
+    ctx.stroke();
     ctx.restore();
   }
-
   ctx.restore();
 }
 
 // ── Draw small bud ────────────────────────────────────────────────
-function drawBud(ctx, x, y, size, alpha = 0.8) {
+function drawBud(ctx, x, y, r, alpha) {
   ctx.save();
-  ctx.globalAlpha = alpha;
-  ctx.fillStyle = '#e8607a';
+  ctx.globalAlpha = alpha || 0.8;
+  // Petals
+  ctx.fillStyle = '#E07090';
   ctx.beginPath();
-  ctx.ellipse(x, y, size * 0.5, size * 0.7, 0, 0, Math.PI * 2);
+  ctx.ellipse(x, y, r*0.5, r*0.7, 0, 0, Math.PI*2);
   ctx.fill();
-  ctx.fillStyle = '#5a8a40';
+  ctx.fillStyle = '#C05070';
   ctx.beginPath();
-  ctx.ellipse(x, y + size * 0.6, size * 0.3, size * 0.2, 0, 0, Math.PI * 2);
+  ctx.ellipse(x+r*0.1, y-r*0.1, r*0.35, r*0.5, -0.3, 0, Math.PI*2);
+  ctx.fill();
+  // Sepal
+  ctx.fillStyle = '#4A7A30';
+  ctx.beginPath();
+  ctx.ellipse(x, y+r*0.65, r*0.25, r*0.2, 0, 0, Math.PI*2);
   ctx.fill();
   ctx.restore();
 }
 
-// ── Draw floral cluster ───────────────────────────────────────────
-function drawFloralCluster(ctx, x, y, scale, variant) {
-  const s = 55 * scale;
-  drawRose(ctx, x + s*0.8, y + s*0.8, s, 0.92);
-  drawRose(ctx, x + s*1.8, y + s*0.3, s*0.75, 0.85);
-  drawRose(ctx, x + s*0.2, y + s*1.6, s*0.7, 0.8);
-  drawBud(ctx, x + s*2.2, y + s*1.2, s*0.35, 0.75);
-  drawBud(ctx, x + s*0.5, y + s*2.2, s*0.28, 0.7);
-
-  // Leaves/stems
+// ── Draw a stem with leaves ───────────────────────────────────────
+function drawStem(ctx, x1, y1, x2, y2, alpha) {
   ctx.save();
-  ctx.strokeStyle = '#4a7a30';
-  ctx.lineWidth = 2 * scale;
-  ctx.globalAlpha = 0.6;
+  ctx.globalAlpha = alpha || 0.6;
+  ctx.strokeStyle = '#5A8A35';
+  ctx.lineWidth   = 1.5;
   ctx.beginPath();
-  ctx.moveTo(x + s*1.5, y + s*1.5);
-  ctx.bezierCurveTo(x + s*2, y + s*2, x + s*2.5, y + s*2.5, x + s*3, y + s*1.8);
+  ctx.moveTo(x1, y1);
+  ctx.bezierCurveTo(x1+20, y1+30, x2-20, y2-30, x2, y2);
   ctx.stroke();
   ctx.restore();
 }
 
-// ── Draw damask background pattern ───────────────────────────────
+// ── Draw a floral cluster (corner) ───────────────────────────────
+function drawCluster(ctx, cx, cy, scale) {
+  const s = scale;
+  // Main large rose
+  drawRose(ctx, cx, cy, 55*s, 0.95);
+  // Secondary roses
+  drawRose(ctx, cx + 70*s, cy - 35*s, 42*s, 0.88);
+  drawRose(ctx, cx - 40*s, cy + 65*s, 38*s, 0.85);
+  drawRose(ctx, cx + 110*s, cy + 25*s, 32*s, 0.8);
+  // Buds
+  drawBud(ctx, cx + 45*s, cy + 80*s, 18*s, 0.8);
+  drawBud(ctx, cx + 140*s, cy - 10*s, 14*s, 0.75);
+  drawBud(ctx, cx - 15*s, cy - 55*s, 16*s, 0.7);
+  // Stems
+  drawStem(ctx, cx-10*s, cy+20*s, cx+40*s, cy+85*s, 0.55);
+  drawStem(ctx, cx+60*s, cy, cx+110*s, cy+30*s, 0.5);
+}
+
+// ── Draw cream damask background ─────────────────────────────────
 function drawBackground(ctx) {
-  // Cream base
-  ctx.fillStyle = '#f8f0e8';
+  // Cream gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#FAF2E8');
+  grad.addColorStop(0.5, '#F5EBE0');
+  grad.addColorStop(1, '#F0E5D5');
+  ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
 
-  // Subtle damask pattern
-  ctx.fillStyle = 'rgba(200,170,140,0.06)';
-  const ps = 80;
-  for (let x = 0; x < W; x += ps) {
-    for (let y = 0; y < H; y += ps) {
+  // Damask pattern
+  const ps = 70;
+  for (let x = ps/2; x < W; x += ps) {
+    for (let y = ps/2; y < H; y += ps) {
       ctx.save();
-      ctx.translate(x + ps/2, y + ps/2);
-      // Diamond shape
+      ctx.translate(x, y);
+      ctx.fillStyle = 'rgba(180,145,110,0.07)';
+      // Diamond
       ctx.beginPath();
-      ctx.moveTo(0, -ps*0.35);
-      ctx.lineTo(ps*0.22, 0);
-      ctx.lineTo(0, ps*0.35);
-      ctx.lineTo(-ps*0.22, 0);
-      ctx.closePath();
-      ctx.fill();
+      ctx.moveTo(0, -28); ctx.lineTo(18, 0); ctx.lineTo(0, 28); ctx.lineTo(-18, 0);
+      ctx.closePath(); ctx.fill();
       // Inner diamond
-      ctx.fillStyle = 'rgba(200,170,140,0.04)';
+      ctx.fillStyle = 'rgba(180,145,110,0.05)';
       ctx.beginPath();
-      ctx.moveTo(0, -ps*0.18);
-      ctx.lineTo(ps*0.11, 0);
-      ctx.lineTo(0, ps*0.18);
-      ctx.lineTo(-ps*0.11, 0);
-      ctx.closePath();
-      ctx.fill();
+      ctx.moveTo(0, -14); ctx.lineTo(9, 0); ctx.lineTo(0, 14); ctx.lineTo(-9, 0);
+      ctx.closePath(); ctx.fill();
+      // Cross
+      ctx.fillStyle = 'rgba(180,145,110,0.04)';
+      ctx.fillRect(-2, -28, 4, 56);
+      ctx.fillRect(-18, -2, 36, 4);
       ctx.restore();
     }
   }
 }
 
-// ── Draw floral decorations using variant ────────────────────────
+// ── Draw all florals ──────────────────────────────────────────────
 function drawFlorals(ctx, variant) {
   const v = variant;
 
-  // Top-left cluster
-  drawFloralCluster(ctx, v.topLeft.x, v.topLeft.y, v.topLeft.scale, v);
+  // TOP LEFT cluster
+  drawCluster(ctx, -10, -10, v.tlScale);
 
-  // Top-right cluster
+  // TOP RIGHT cluster (mirror)
   ctx.save();
+  ctx.translate(W, 0);
   ctx.scale(-1, 1);
-  ctx.translate(-W, 0);
-  drawFloralCluster(ctx, W - v.topRight.x - 200*v.topRight.scale, v.topRight.y, v.topRight.scale, v);
+  drawCluster(ctx, -10, -10, v.trScale);
   ctx.restore();
 
-  // Bottom-left cluster
+  // BOTTOM LEFT cluster (flip vertical)
   ctx.save();
+  ctx.translate(0, H);
   ctx.scale(1, -1);
-  ctx.translate(0, -H);
-  drawFloralCluster(ctx, v.bottomLeft.x, H - v.bottomLeft.y - 200*v.bottomLeft.scale, v.bottomLeft.scale, v);
+  drawCluster(ctx, -10, -10, v.blScale);
   ctx.restore();
 
-  // Bottom-right cluster
+  // BOTTOM RIGHT cluster (flip both)
   ctx.save();
+  ctx.translate(W, H);
   ctx.scale(-1, -1);
-  ctx.translate(-W, -H);
-  drawFloralCluster(ctx, W - v.bottomRight.x - 200*v.bottomRight.scale, H - v.bottomRight.y - 200*v.bottomRight.scale, v.bottomRight.scale, v);
+  drawCluster(ctx, -10, -10, v.brScale);
   ctx.restore();
 
-  // Top center cluster (smaller)
+  // TOP CENTER small cluster
   ctx.save();
-  ctx.translate(W/2, 0);
-  drawFloralCluster(ctx, v.topCenter.x, v.topCenter.y, v.topCenter.scale, v);
+  ctx.translate(W/2 - 60, 0);
+  const tc = v.tcScale;
+  drawRose(ctx, 30, -20, 38*tc, 0.8);
+  drawRose(ctx, 90, -30, 28*tc, 0.72);
+  drawBud(ctx, 0, 30, 12*tc, 0.65);
+  drawBud(ctx, 120, 10, 10*tc, 0.6);
   ctx.restore();
 
-  // Left edge roses
-  drawRose(ctx, 25, H/2 - 30, 35, 0.75);
-  drawRose(ctx, 35, H/2 + 50, 28, 0.65);
+  // LEFT EDGE — extra roses along left side
+  drawRose(ctx, 15, H*0.42, 28, 0.65);
+  drawRose(ctx, 20, H*0.62, 22, 0.6);
 
-  // Right side roses (behind photo area)
-  drawRose(ctx, W - 30, H/2, 32, 0.7);
+  // RIGHT EDGE
+  drawRose(ctx, W - 18, H*0.38, 25, 0.6);
 }
 
-// ── Draw QR code ──────────────────────────────────────────────────
-async function drawQRCode(ctx, link, x, y, size) {
-  try {
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${size*2}x${size*2}&margin=4&data=${encodeURIComponent(link)}`;
-    const res   = await fetch(qrUrl);
-    const buf   = await res.buffer();
-    const img   = await loadImage(buf);
-    // White background for QR
-    ctx.fillStyle = 'white';
-    ctx.fillRect(x - 4, y - 4, size + 8, size + 8);
-    ctx.drawImage(img, x, y, size, size);
-  } catch(e) {
-    console.error('QR error:', e.message);
-  }
+// ── Draw the white content panel ─────────────────────────────────
+function drawPanel(ctx) {
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.1)';
+  ctx.shadowBlur  = 20;
+  ctx.shadowOffsetX = 2;
+  ctx.shadowOffsetY = 2;
+  ctx.fillStyle   = 'rgba(255,255,255,0.9)';
+  // Panel: starts at x=175, y=72, ends before photo area
+  rr(ctx, 175, 72, 900, 280, 16);
+  ctx.fill();
+  ctx.restore();
 }
 
 // ── Draw seller photo ─────────────────────────────────────────────
-async function drawSellerPhoto(ctx, photoBuffer, x, y, w, h) {
+async function drawPhoto(ctx, photoBuffer) {
   try {
-    const img = await loadImage(photoBuffer);
+    const img  = await loadImage(photoBuffer);
+    const px   = 1110, py = 30, pw = 330, ph = H - 30;
 
-    // Calculate crop — show face + upper body centered
-    const imgAR = img.width / img.height;
-    const boxAR = w / h;
+    // Show top portion of image (face + body)
+    const targetAR = pw / ph;
+    const imgAR    = img.width / img.height;
 
     let sx, sy, sw, sh;
-    if (imgAR > boxAR) {
-      // Image wider than box — crop sides
+    if (imgAR > targetAR) {
+      // Wider than needed — crop sides
       sh = img.height;
-      sw = sh * boxAR;
+      sw = sh * targetAR;
       sx = (img.width - sw) / 2;
       sy = 0;
     } else {
-      // Image taller than box — show top portion (face + body)
+      // Taller than needed — show from top
       sw = img.width;
-      sh = sw / boxAR;
+      sh = sw / targetAR;
       sx = 0;
-      sy = img.height * 0.05; // start slightly down to cut empty top
+      sy = 0;
     }
 
-    // Clip to box
     ctx.save();
     ctx.beginPath();
-    ctx.rect(x, y, w, h);
+    ctx.rect(px, py, pw, ph);
     ctx.clip();
-    ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+    ctx.drawImage(img, sx, sy, sw, sh, px, py, pw, ph);
     ctx.restore();
   } catch(e) {
-    console.error('Photo error:', e.message);
+    console.error('Photo draw error:', e.message);
   }
 }
 
-// ── Main banner generator ─────────────────────────────────────────
-async function generateBanner({
-  sellerName,
-  sellerName2,
-  category,
-  timing,
-  policyText,
-  qrLink,
-  photoBuffer,
-  accentColor
-}) {
-  const canvas = createCanvas(W, H);
-  const ctx    = canvas.getContext('2d');
-  const variant = pickVariant(sellerName);
-  const accent  = accentColor || variant.accent || '#6B1A2A';
+// ── Draw QR code ──────────────────────────────────────────────────
+async function drawQR(ctx, link, x, y, size) {
+  try {
+    const url = `https://api.qrserver.com/v1/create-qr-code/?size=${size*3}x${size*3}&margin=4&data=${encodeURIComponent(link)}`;
+    const res = await fetch(url);
+    const buf = await res.buffer();
+    const img = await loadImage(buf);
+    // White bg
+    ctx.fillStyle = 'white';
+    ctx.fillRect(x-3, y-3, size+6, size+6);
+    ctx.drawImage(img, x, y, size, size);
+  } catch(e) {
+    console.error('QR error:', e.message);
+    // Draw placeholder
+    ctx.fillStyle = 'white';
+    ctx.fillRect(x, y, size, size);
+    ctx.strokeStyle = '#ccc';
+    ctx.strokeRect(x, y, size, size);
+  }
+}
+
+// ── Main generate function ────────────────────────────────────────
+async function generateBanner({ sellerName, sellerName2, category, timing, policyText, qrLink, photoBuffer, accentColor }) {
+  const canvas  = createCanvas(W, H);
+  const ctx     = canvas.getContext('2d');
+  const variant = pickVariant(sellerName || 'seller');
+
+  // Use accent color from Groq or fallback to maroon
+  // Only accept dark red/maroon tones — reject greens/blues
+  let accent = '#6B1A2A';
+  if (accentColor) {
+    const r = parseInt(accentColor.slice(1,3),16);
+    const g = parseInt(accentColor.slice(3,5),16);
+    const b = parseInt(accentColor.slice(5,7),16);
+    // Only use if it's a dark warm tone (red/maroon dominant)
+    if (r > g && r > b && r > 80) {
+      accent = accentColor;
+    }
+  }
 
   // ── 1. Background ───────────────────────────────────────────────
   drawBackground(ctx);
 
-  // ── 2. Floral decorations ───────────────────────────────────────
+  // ── 2. Florals ──────────────────────────────────────────────────
   drawFlorals(ctx, variant);
 
-  // ── 3. White content panel ──────────────────────────────────────
-  const panelX = 155, panelY = 90, panelW = 1130, panelH = 250;
-  ctx.save();
-  ctx.shadowColor = 'rgba(0,0,0,0.08)';
-  ctx.shadowBlur  = 18;
-  ctx.fillStyle   = 'rgba(255,255,255,0.88)';
-  roundRect(ctx, panelX, panelY, panelW, panelH, 18);
-  ctx.fill();
-  ctx.restore();
+  // ── 3. White panel ──────────────────────────────────────────────
+  drawPanel(ctx);
 
-  // ── 4. Seller photo (right side) ────────────────────────────────
+  // ── 4. Seller photo ─────────────────────────────────────────────
   if (photoBuffer) {
-    await drawSellerPhoto(ctx, photoBuffer, 940, 55, 330, 315);
+    await drawPhoto(ctx, photoBuffer);
   }
 
-  // ── 5. Seller name ──────────────────────────────────────────────
-  // Bold serif name
-  ctx.fillStyle = '#2a1a1a';
-  ctx.font      = 'bold 52px serif';
+  // ── 5. Seller names ─────────────────────────────────────────────
+  // Bold serif — "DECCOR" style
+  ctx.fillStyle = '#1A1A1A';
+  ctx.font      = 'bold 58px serif';
   ctx.textAlign = 'center';
-  ctx.fillText(sellerName || 'SELLER', 310, 185);
+  const name1   = sellerName || 'SELLER';
+  ctx.fillText(name1, 310, 195);
 
-  // Cursive second name
+  // Script style — "Diiva" style
   ctx.fillStyle = accent;
-  ctx.font      = 'italic bold 46px serif';
-  ctx.fillText(sellerName2 || 'Name', 310, 240);
+  ctx.font      = 'italic bold 50px serif';
+  const name2   = sellerName2 || '';
+  if (name2) {
+    ctx.fillText(name2, 325, 255);
+  }
   ctx.textAlign = 'left';
 
-  // ── 6. Category pill (tan bubble) ───────────────────────────────
-  const catX = 470, catY = 105, catW = 270, catH = 75;
-  ctx.fillStyle = '#c8b090';
-  roundRect(ctx, catX, catY, catW, catH, 22);
+  // ── 6. Category bubble (tan pill) ───────────────────────────────
+  const catX = 458, catY = 88, catW = 295, catH = 80;
+  // Tan/beige color matching template
+  ctx.fillStyle = '#C8A882';
+  rr(ctx, catX, catY, catW, catH, 25);
   ctx.fill();
   ctx.fillStyle = 'white';
   ctx.font      = 'bold 22px sans-serif';
   ctx.textAlign = 'center';
-
-  // Wrap category text
-  const catWords = (category || 'Products').split(' ');
-  if (catWords.length <= 3) {
-    ctx.fillText(category, catX + catW/2, catY + catH/2 + 8);
+  const catText = category || 'Products';
+  // Auto wrap at 2 lines
+  const words   = catText.split(' ');
+  const mid     = Math.ceil(words.length / 2);
+  if (words.length > 2) {
+    ctx.fillText(words.slice(0, mid).join(' '), catX + catW/2, catY + catH/2 - 10);
+    ctx.fillText(words.slice(mid).join(' '),    catX + catW/2, catY + catH/2 + 18);
   } else {
-    const line1 = catWords.slice(0, Math.ceil(catWords.length/2)).join(' ');
-    const line2 = catWords.slice(Math.ceil(catWords.length/2)).join(' ');
-    ctx.fillText(line1, catX + catW/2, catY + catH/2 - 8);
-    ctx.fillText(line2, catX + catW/2, catY + catH/2 + 18);
+    ctx.fillText(catText, catX + catW/2, catY + catH/2 + 8);
   }
   ctx.textAlign = 'left';
 
-  // ── 7. Daily Live badge ──────────────────────────────────────────
-  const badgeX = 468, badgeY = 198, badgeW = 275, badgeH = 105;
+  // ── 7. DAILY LIVE badge (maroon rounded) ────────────────────────
+  const badgeX = 456, badgeY = 188, badgeW = 298, badgeH = 118;
   ctx.fillStyle = accent;
-  roundRect(ctx, badgeX, badgeY, badgeW, badgeH, 24);
+  rr(ctx, badgeX, badgeY, badgeW, badgeH, 28);
   ctx.fill();
 
-  // Wifi icon
+  // Wifi signal icon (top right of badge)
+  ctx.save();
   ctx.strokeStyle = 'rgba(255,255,255,0.85)';
   ctx.lineWidth   = 3;
   ctx.lineCap     = 'round';
+  const wx = badgeX + badgeW - 28, wy = badgeY + 28;
   for (let i = 1; i <= 3; i++) {
     ctx.beginPath();
-    ctx.arc(badgeX + badgeW - 22, badgeY + 28, i * 8, -Math.PI * 0.75, -Math.PI * 0.25);
+    ctx.arc(wx, wy + 8, i * 9, -Math.PI*0.75, -Math.PI*0.25);
     ctx.stroke();
   }
+  ctx.fillStyle = 'white';
+  ctx.beginPath();
+  ctx.arc(wx, wy + 8, 4, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
 
   ctx.fillStyle = 'white';
   ctx.textAlign = 'center';
-  ctx.font      = 'bold 20px sans-serif';
-  ctx.fillText('DAILY LIVE', badgeX + badgeW/2 - 12, badgeY + 42);
-  ctx.font      = 'bold 38px sans-serif';
-  ctx.fillText(timing || '@8 PM', badgeX + badgeW/2 - 12, badgeY + 85);
+  ctx.font      = 'bold 24px sans-serif';
+  ctx.fillText('DAILY LIVE', badgeX + badgeW/2 - 14, badgeY + 50);
+  ctx.font      = 'bold 44px sans-serif';
+  ctx.fillText(timing || '@8 PM', badgeX + badgeW/2 - 14, badgeY + 100);
   ctx.textAlign = 'left';
 
   // ── 8. Policy bar ───────────────────────────────────────────────
-  const polX = 440, polY = 318, polW = 340, polH = 44;
+  const polX = 428, polY = 325, polW = 355, polH = 48;
   ctx.fillStyle = accent;
-  roundRect(ctx, polX, polY, polW, polH, 14);
+  rr(ctx, polX, polY, polW, polH, 16);
   ctx.fill();
   ctx.fillStyle = 'white';
-  ctx.font      = 'bold 17px sans-serif';
+  ctx.font      = 'bold 19px sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText((policyText || 'NO EXCHANGE • NO RETURN').toUpperCase(), polX + polW/2, polY + 29);
+  ctx.fillText((policyText || 'NO EXCHANGE • NO RETURN').toUpperCase(), polX + polW/2, polY + 32);
   ctx.textAlign = 'left';
 
-  // ── 9. QR code + Follow us on Zoop ──────────────────────────────
+  // ── 9. QR Code + Follow us on Zoop ──────────────────────────────
   if (qrLink) {
-    await drawQRCode(ctx, qrLink, 182, 195, 95);
+    await drawQR(ctx, qrLink, 196, 205, 100);
   }
-  ctx.fillStyle = '#555';
+  ctx.fillStyle = '#555555';
   ctx.font      = '15px sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText('Follow us on Zoop', 230, 310);
+  ctx.fillText('Follow us on Zoop', 248, 322);
   ctx.textAlign = 'left';
 
-  // ── 10. Return as JPG buffer ─────────────────────────────────────
+  // ── 10. Return JPG ──────────────────────────────────────────────
   return canvas.toBuffer('image/jpeg', { quality: 0.95 });
 }
 
